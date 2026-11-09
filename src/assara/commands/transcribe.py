@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shlex
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -292,8 +293,9 @@ def run(args, cfg) -> int:
         todo = sum(1 for m in media if not srt_paths[m].exists())
         if todo >= LONG_PASS:
             print(
-                "Long pass: run it detached and gently, e.g. `nohup nice -n 19 assara transcribe "
-                f"{args.code} '{path}' > transcribe.log 2>&1 &`, or inside tmux. "
+                "Long pass: run it detached and gently, e.g. `nohup "
+                + shlex.join(["nice", "-n", "19", "assara", "transcribe", args.code, str(path)])
+                + " > transcribe.log 2>&1 &`, or inside tmux. "
                 "It can be resumed at any time."
             )
         report = run_pass(media, srt_paths, factory)

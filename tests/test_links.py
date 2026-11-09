@@ -858,3 +858,84 @@ def test_allow_private_addresses_reaches_a_local_server(local_server):
     r = links.http_get(f"http://127.0.0.1:{port}/page", allow_private=True)
     assert r.status_code == 200 and "local" in r.text
     assert seen == ["/page"]
+
+
+# ---------------------------------------------------------------- limits on what a server can send
+
+
+def test_page_larger_than_the_limit_is_refused(monkeypatch):
+    fake_web(monkeypatch, {"http://93.184.215.14/big": (200, {"Content-Type": "text/html"}, b"x" * 5000)})
+    with pytest.raises(links.TooLarge, match="more than 1,000 bytes"):
+        links.http_get("http://93.184.215.14/big", max_bytes=1000)
+    assert links.http_get("http://93.184.215.14/big", max_bytes=5000).content == b"x" * 5000
+
+
+def test_announced_length_is_refused_before_reading(monkeypatch):
+    headers = {"Content-Type": "text/html", "Content-Length": "999999999"}
+    fake_web(monkeypatch, {"http://93.184.215.14/big": (200, headers, b"tiny")})
+    with pytest.raises(links.TooLarge, match="announced"):
+        links.http_get("http://93.184.215.14/big", max_bytes=1000)
+
+
+def test_slow_body_hits_the_time_limit(monkeypatch):
+    fake_web(monkeypatch, {"http://93.184.215.14/slow": (200, {}, b"abc")})
+    with pytest.raises(links.TooLarge, match="time limit"):
+        links.http_get("http://93.184.215.14/slow", max_seconds=-1)
+
+
+def test_too_large_page_is_recorded_as_inaccessible(monkeypatch):
+    fake_web(
+        monkeypatch, {"http://93.184.215.14/big": (200, {"Content-Type": "text/html"}, b"<p>x</p>" * 500)}
+    )
+    monkeypatch.setattr(links, "MAX_PAGE_BYTES", 100)
+    page = links.fetch_page("http://93.184.215.14/big")
+    assert not page.ok and page.error.startswith("too large")
+
+
+def test_too_large_media_leaves_no_file(tmp_path, monkeypatch, capsys):
+    fake_web(monkeypatch, {"http://93.184.215.14/v.mp4": (200, {}, b"v" * 4096)})
+    monkeypatch.setattr(links, "MAX_MEDIA_BYTES", 1000)
+    dest = tmp_path / "v.mp4"
+    assert links.download("http://93.184.215.14/v.mp4", dest) is False
+    assert not dest.exists() and not (tmp_path / "v.mp4.part").exists()
+    assert "too large" in capsys.readouterr().out
+
+
+def test_ytdlp_audio_has_size_and_time_limits(tmp_path, monkeypatch):
+    import subprocess
+
+    seen = {}
+
+    def run(cmd, **k):
+        seen["cmd"], seen["timeout"] = cmd, k.get("timeout")
+        raise subprocess.TimeoutExpired(cmd, k.get("timeout"))
+
+    monkeypatch.setattr(links.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(links.subprocess, "run", run)
+    path, error = links.download_audio("https://www.youtube.com/watch?v=abc", tmp_path / "audio")
+    assert path is None and "time limit" in error
+    assert seen["cmd"][seen["cmd"].index("--max-filesize") + 1] == links.MAX_YTDLP_FILESIZE
+    assert seen["timeout"] == links.MAX_YTDLP_SECONDS
+
+
+# ---------------------------------------------------------------- unit numbers past 99
+
+
+def test_next_unit_number_reads_every_digit(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    for name in ("w09.json", "w99.md", "w100.json", "links-x.txt"):
+        (raw / name).write_text("{}", encoding="utf-8")
+    assert links.next_unit_number(tmp_path, "w") == 101
+    assert links.new_unit(tmp_path, "w") == "w101"
+    names = [p.name for p in links.by_unit_number(raw.glob("w*.json"), "w")]
+    assert names == ["w09.json", "w100.json"]
+
+
+def test_new_unit_refuses_a_name_in_use(tmp_path, monkeypatch):
+    (tmp_path / "units").mkdir()
+    (tmp_path / "units" / "w100a-page.md").write_text("cited text", encoding="utf-8")
+    monkeypatch.setattr(links, "next_unit_number", lambda d, prefix: 100)
+    with pytest.raises(links.AssaraError, match="w100 already exists"):
+        links.new_unit(tmp_path, "w")
+    assert (tmp_path / "units" / "w100a-page.md").read_text(encoding="utf-8") == "cited text"

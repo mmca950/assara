@@ -7,6 +7,7 @@ numbers printed in the book. Citations: `CODE uNN [p.N]`.
 from __future__ import annotations
 
 import re
+import shlex
 import shutil
 import subprocess
 import unicodedata
@@ -117,16 +118,20 @@ def check_text_layer(texts: list[str]) -> Scan:
     return Scan(scanned, watermark, total, n, repeated)
 
 
-def ocr_command(file: Path, out: Path, language: str = "") -> str:
-    """The ocrmypdf command to run on a scanned PDF (printed, never run by assara)."""
+def ocr_command(file: Path, out: Path, language: str = "", force: bool = False) -> str:
+    """The ocrmypdf command to run on a scanned PDF (printed, never run by assara).
+
+    Every argument is quoted for the shell (`shlex.join`): a file name with a quote, a `$` or a `;` stays
+    a file name when the user copies the command.
+    """
     lang = OCR_LANGUAGES.get(language.lower(), language) if language else "eng"
-    return f"nice -n 19 ocrmypdf -l {lang} --jobs 2 --skip-text '{file}' '{out}'"
+    mode = "--force-ocr" if force else "--skip-text"
+    return shlex.join(["nice", "-n", "19", "ocrmypdf", "-l", lang, "--jobs", "2", mode, str(file), str(out)])
 
 
 def ocr_advice(scan: Scan, file: Path, out: Path, language: str, code: str) -> str:
-    cmd = ocr_command(file, out, language)
+    cmd = ocr_command(file, out, language, force=scan.watermark)
     if scan.watermark:
-        cmd = cmd.replace("--skip-text", "--force-ocr")
         why = (
             f"the only text is a line repeated on most pages (watermark or stamp: "
             f"'{scan.repeated_lines[0][:60]}'), so --skip-text would skip every page"
@@ -136,7 +141,7 @@ def ocr_advice(scan: Scan, file: Path, out: Path, language: str, code: str) -> s
     return (
         f"WARNING: this PDF looks scanned ({why}). Run OCR first (not run for you):\n"
         f"  {cmd}\n"
-        f"then: assara add {code} '{out}'"
+        f"then: {shlex.join(['assara', 'add', code, str(out)])}"
     )
 
 

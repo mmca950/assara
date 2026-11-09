@@ -184,3 +184,16 @@ def test_control_characters_are_cleaned_from_pdf_text():
     starts, titles = pdfmod.chapter_starts([[1, "One\x1b]0;x\x07", 1], [1, "Two", 3]])
     assert titles[1] == "One ]0;x"
     assert pdfmod.clean_rtl("alpha\x1b[2Jbeta\x0cgamma") == "alpha [2Jbetagamma"
+
+
+def test_ocr_command_quotes_hostile_file_names(tmp_path):
+    import shlex
+
+    from assara import pdf
+
+    file = tmp_path / "it's'; touch PWNED; '.pdf"
+    out = tmp_path / "out $(id).pdf"
+    cmd = pdf.ocr_command(file, out, "fr", force=True)
+    assert shlex.split(cmd) == [
+        "nice", "-n", "19", "ocrmypdf", "-l", "fra", "--jobs", "2", "--force-ocr", str(file), str(out)
+    ]  # fmt: skip

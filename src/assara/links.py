@@ -28,6 +28,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -230,12 +231,17 @@ SUBTITLE_LABELS = {"manual": "manual subtitles", "auto": "automatic subtitles"}
 # ---------------------------------------------------------------- yt-dlp
 
 
-def run_ytdlp(args: list[str]) -> subprocess.CompletedProcess:
-    """Run yt-dlp in the current Python environment."""
+def run_ytdlp(args: list[str], timeout: float | None = None) -> subprocess.CompletedProcess:
+    """Run yt-dlp in the current Python environment (stopped after `timeout` seconds, if given)."""
     if importlib.util.find_spec("yt_dlp") is None:
         raise AssaraError(f"YouTube links need yt-dlp: {LINKS_EXTRA}")
     cmd = [sys.executable, "-m", "yt_dlp", "--no-warnings", *args]
-    return subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            cmd, 1, "", f"ERROR: stopped after {timeout:.0f} seconds (time limit)"
+        )
 
 
 def clean_data(value):
@@ -281,7 +287,19 @@ def download_subtitles(url: str, dest: Path, kind: str, lang: str) -> Path | Non
 
 
 def download_audio(url: str, dest_stem: Path) -> tuple[Path | None, str]:
-    r = run_ytdlp(["-f", "bestaudio/best", "--no-playlist", "-o", str(dest_stem) + ".%(ext)s", url])
+    r = run_ytdlp(
+        [
+            "-f",
+            "bestaudio/best",
+            "--no-playlist",
+            "--max-filesize",
+            MAX_YTDLP_FILESIZE,
+            "-o",
+            str(dest_stem) + ".%(ext)s",
+            url,
+        ],
+        timeout=MAX_YTDLP_SECONDS,
+    )
     skip = {".srt", ".part", ".json", ".ytdl", ".kind"}
     found = [p for p in dest_stem.parent.glob(dest_stem.name + ".*") if p.suffix not in skip]
     if found:
@@ -474,6 +492,32 @@ def ocr(image: Path, language: str) -> str | None:
 
 
 MAX_REDIRECTS = 10
+# Limits on what a remote server can send, so a hostile or broken source cannot fill the disk or the memory.
+MAX_PAGE_BYTES = 10 * 1024 * 1024  # a web page, held in memory
+MAX_PAGE_SECONDS = 120
+MAX_MEDIA_BYTES = 1024 * 1024 * 1024  # an Instagram image or video, written to disk
+MAX_MEDIA_SECONDS = 30 * 60
+MAX_YTDLP_FILESIZE = "2G"  # audio of a YouTube video, when Whisper needs it
+MAX_YTDLP_SECONDS = 3 * 3600
+
+
+class TooLarge(Exception):
+    """A response larger than its byte limit, or slower than its time limit."""
+
+
+def limited_chunks(r, max_bytes: int, deadline: float):
+    """The body of a streamed response, in chunks; TooLarge past `max_bytes` or the `deadline` (monotonic)."""
+    length = r.headers.get("content-length") or ""
+    if length.isdigit() and int(length) > max_bytes:
+        raise TooLarge(f"too large: {int(length):,} bytes announced, limit {max_bytes:,}")
+    received = 0
+    for chunk in r.iter_content(1 << 16):
+        received += len(chunk)
+        if received > max_bytes:
+            raise TooLarge(f"too large: more than {max_bytes:,} bytes")
+        if time.monotonic() > deadline:
+            raise TooLarge("too slow: time limit reached")
+        yield chunk
 
 
 class RefusedAddress(Exception):
@@ -569,18 +613,29 @@ def checked_adapter():
     return _CHECKED_ADAPTER()
 
 
-def http_get(url: str, timeout: int = 60, stream: bool = False, allow_private: bool = False):
+def http_get(
+    url: str,
+    timeout: int = 60,
+    stream: bool = False,
+    allow_private: bool = False,
+    max_bytes: int | None = None,
+    max_seconds: float | None = None,
+):
     """GET with requests (imported lazily), checking the address of the link and of every redirect.
 
     Redirects are followed by hand, inside one session (cookies set by a redirect are sent back on
     the next hop), each target decoded as requests does it. Raises RefusedAddress for a local or
     private address, before the request (`check_address`) and on the connection itself
-    (`checked_adapter`). With `stream`, closing the response closes the session.
+    (`checked_adapter`). Without `stream`, the body is read here, within `max_bytes` and `max_seconds`
+    (TooLarge otherwise); with `stream`, the caller reads it (see `limited_chunks`) and closing the response
+    closes the session.
     """
     try:
         import requests
     except ImportError as e:
         raise AssaraError(f"Links need requests: {LINKS_EXTRA}") from e
+    max_bytes = MAX_PAGE_BYTES if max_bytes is None else max_bytes
+    deadline = time.monotonic() + (MAX_PAGE_SECONDS if max_seconds is None else max_seconds)
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
     if not allow_private:
@@ -593,7 +648,7 @@ def http_get(url: str, timeout: int = 60, stream: bool = False, allow_private: b
             except (requests.RequestException, ValueError) as e:
                 raise RefusedAddress(f"refused: malformed address: {url}: {e}") from e
             check_address(url, allow_private)
-            r = session.get(url, timeout=timeout, stream=stream, allow_redirects=False)
+            r = session.get(url, timeout=timeout, stream=True, allow_redirects=False)
             location = session.get_redirect_target(r)
             if not location:
                 break
@@ -605,7 +660,13 @@ def http_get(url: str, timeout: int = 60, stream: bool = False, allow_private: b
         session.close()
         raise
     if not stream:
-        session.close()  # the body is already read
+        try:
+            # Read the body within the limits, then hand it to requests (r.text, r.content work as usual).
+            r._content = b"".join(limited_chunks(r, max_bytes, deadline))
+            r._content_consumed = True
+        finally:
+            r.close()
+            session.close()
         return r
     close_response = r.close
 
@@ -617,30 +678,63 @@ def http_get(url: str, timeout: int = 60, stream: bool = False, allow_private: b
     return r
 
 
-def download(url: str, dest: Path, allow_private: bool = False) -> bool:
+def download(
+    url: str,
+    dest: Path,
+    allow_private: bool = False,
+    max_bytes: int | None = None,
+    max_seconds: float | None = None,
+) -> bool:
+    """Save `url` to `dest` within `max_bytes` and `max_seconds`; False (and nothing left) on failure."""
     if dest.exists() and dest.stat().st_size > 0:
         return True
+    tmp = dest.with_name(dest.name + ".part")
     try:
         with http_get(url, timeout=300, stream=True, allow_private=allow_private) as r:
             r.raise_for_status()
-            tmp = dest.with_name(dest.name + ".part")
             with open(tmp, "wb") as f:
-                for chunk in r.iter_content(1 << 16):
+                limit = MAX_MEDIA_BYTES if max_bytes is None else max_bytes
+                deadline = time.monotonic() + (MAX_MEDIA_SECONDS if max_seconds is None else max_seconds)
+                for chunk in limited_chunks(r, limit, deadline):
                     f.write(chunk)
         tmp.rename(dest)
-    except Exception as e:  # noqa: BLE001  (network error, expired media URL)
+    except Exception as e:  # noqa: BLE001  (network error, expired media URL, too large)
+        tmp.unlink(missing_ok=True)
         print(f"  download failed: {e}")
         return False
     return dest.exists() and dest.stat().st_size > 0
 
 
+def unit_number(name: str, prefix: str) -> int | None:
+    """The full number of a unit file or folder name (`w07.json`, `w100.md`, `p12`, `w03b-title.md`)."""
+    m = re.match(rf"{prefix}(\d+)(?:[a-z]?-|\.|$)", name)
+    return int(m.group(1)) if m else None
+
+
 def next_unit_number(d: Path, prefix: str) -> int:
+    """The number after every unit of `prefix` in raw/ and units/ (all digits read: w100 follows w99)."""
     used = [
-        int(p.name[len(prefix) : len(prefix) + 2])
-        for p in (d / "raw").glob(f"{prefix}[0-9][0-9]*")
-        if p.name[len(prefix) : len(prefix) + 2].isdigit()
+        n
+        for folder in (d / "raw", d / "units")
+        if folder.is_dir()
+        for p in folder.iterdir()
+        if (n := unit_number(p.name, prefix)) is not None
     ]
     return 1 + max(used or [0])
+
+
+def new_unit(d: Path, prefix: str) -> str:
+    """The name of the next unit (`w01`, ..., `w100`), refused if anything already uses that name."""
+    unit = f"{prefix}{next_unit_number(d, prefix):02d}"
+    taken = [p.name for folder in (d / "raw", d / "units") if folder.is_dir() for p in folder.iterdir()]
+    if any(unit_number(name, prefix) == int(unit[len(prefix) :]) for name in taken):
+        raise AssaraError(f"{unit} already exists in {d}: refusing to overwrite it.")
+    return unit
+
+
+def by_unit_number(paths, prefix: str) -> list[Path]:
+    """`paths` sorted by unit number (w9, w10, w100), not by name (w10, w100, w9)."""
+    return sorted(paths, key=lambda p: (unit_number(p.name, prefix) or 0, p.name))
 
 
 def instagram_post(shortcode: str):
@@ -681,8 +775,7 @@ def add_instagram(cfg: Config, url: str, code: str, title: str | None, language:
             print(f"Post {sc} is already in {code} ({p.name}): nothing to do.")
             return d
     _, media, caption, owner, date = instagram_post(sc)
-    n = next_unit_number(d, "p")
-    unit = f"p{n:02d}"
+    unit = new_unit(d, "p")
     raw = d / "raw" / unit
     raw.mkdir(parents=True)
     (raw / "caption.txt").write_text(caption + "\n", encoding="utf-8")
@@ -765,7 +858,7 @@ def existing_title(d: Path) -> str | None:
 
 def instagram_index(d: Path, code: str, title: str | None) -> Path:
     rows = []
-    for raw in sorted(p for p in (d / "raw").glob("p[0-9]*") if (p / "post.json").exists()):
+    for raw in by_unit_number((p for p in (d / "raw").glob("p[0-9]*") if (p / "post.json").exists()), "p"):
         m = json.loads((raw / "post.json").read_text(encoding="utf-8"))
         u = next(iter(sorted((d / "units").glob(raw.name + "-*.md"))), None)
         rows.append(
@@ -898,7 +991,7 @@ def fetch_page(url: str, allow_private: bool = False) -> WebPage:
         r = http_get(url, allow_private=allow_private)
     except AssaraError:
         raise
-    except RefusedAddress as e:
+    except (RefusedAddress, TooLarge) as e:
         return WebPage(url, "", "", clean_text(str(e)))
     except Exception as e:  # noqa: BLE001  (DNS, timeout, TLS)
         return WebPage(url, "", "", clean_text(f"unreachable: {e}"))
@@ -925,7 +1018,7 @@ def web_index(d: Path, code: str, title: str | None) -> Path:
                 "File": f"`units/{u.name}`",
             }
         )
-    for meta_file in sorted((d / "raw").glob("w[0-9][0-9]*.json")):
+    for meta_file in by_unit_number((d / "raw").glob("w[0-9]*.json"), "w"):
         m = json.loads(meta_file.read_text(encoding="utf-8"))
         if m.get("error"):
             missing.append(f"- {m['unit']}: {m['url']} ({m['error']}, {m.get('retrieved', '')})")
@@ -963,7 +1056,7 @@ def web_index(d: Path, code: str, title: str | None) -> Path:
 
 
 def known_url(d: Path, url: str) -> str | None:
-    for meta_file in (d / "raw").glob("w[0-9][0-9]*.json"):
+    for meta_file in (d / "raw").glob("w[0-9]*.json"):
         m = json.loads(meta_file.read_text(encoding="utf-8"))
         if url in (m.get("url"), m.get("requested")) and not m.get("error"):
             return m["unit"]
@@ -977,7 +1070,7 @@ def add_web_page(cfg: Config, url: str, code: str, d: Path | None = None) -> tup
     if done:
         print(f"  {url} is already {code} {done}: skipped.")
         return done, None
-    unit = f"w{next_unit_number(d, 'w'):02d}"
+    unit = new_unit(d, "w")
     page = fetch_page(url, cfg.allow_private_addresses)
     meta = {"unit": unit, "requested": url, "url": page.url, "title": page.title, "retrieved": today()}
     if not page.ok:

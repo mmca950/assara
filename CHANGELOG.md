@@ -58,6 +58,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Subtitles read from a link go through the same SRT reader as `assara transcribe` (`{\an8}`-style tags
   dropped).
 - The traceback of an unexpected error is printed with control characters shown as `?`.
+- Commands printed for you to copy (the `ocrmypdf` advice for a scanned PDF, the `nohup` hint of a long
+  transcription) quote every argument for the shell: a file name with a quote, `$` or `;` cannot run a
+  command.
+- Downloads have limits: 10 MB and 2 minutes for a web page, 1 GB and 30 minutes for an Instagram image
+  or video, 2 GB and 3 hours for the audio of a YouTube video. A page over its limit is recorded as
+  inaccessible; a media over its limit leaves no partial file.
+- Unit numbers read every digit: after `w99`, `w100` and `w101` follow, and a new unit is refused if its
+  name is already used (no overwritten page). INDEX rows follow the unit number (w9 before w10).
 - Link mode detection parses the host properly (`https://attacker.example?.youtube.com` is a web page).
 - `docs/claude-code.md`: the recommended permissions no longer allow `assara link`, `assara add`,
   `assara transcribe`, shell `grep`, `head` or `wc` without a prompt, and deny writing a `CLAUDE.md` or a

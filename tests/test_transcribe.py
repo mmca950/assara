@@ -200,3 +200,21 @@ def test_missing_path(tmp_path):
     cfg = make_library(tmp_path)
     with pytest.raises(SystemExit):
         main(["--library", str(cfg.root), "transcribe", "POD1", str(tmp_path / "nope")])
+
+
+def test_long_pass_hint_quotes_the_path(tmp_path, monkeypatch, capsys):
+    import re
+    import shlex
+
+    from assara import whisper
+
+    cfg = make_library(tmp_path)
+    course = tmp_path / "it's; touch PWNED"
+    for n in ("a.mp3", "b.mp3", "c.mp3"):
+        course.mkdir(exist_ok=True)
+        (course / n).write_bytes(b"not really audio")
+    fake = FakeTranscriber()
+    monkeypatch.setattr(whisper, "make_transcriber", lambda *a, **k: fake.factory())
+    main(["--library", str(cfg.root), "transcribe", "POD2", str(course)])
+    hint = re.search(r"`nohup (.+?) > transcribe\.log", capsys.readouterr().out).group(1)
+    assert shlex.split(hint) == ["nice", "-n", "19", "assara", "transcribe", "POD2", str(course)]
