@@ -22,7 +22,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Skills `add-source`, `distill`, `synthesize`, `tutor`, and templates for notes, short notes, INDEX,
   synthesis sheets and project `README.md`.
 - Documentation: architecture, installation, usage, configuration, Claude Code, legal.
-- A new `README.md`: logo, example excerpts, diagram, features, FAQ and roadmap.
+- A new `README.md`: logo, example excerpts, diagram, features and FAQ.
 - Docker image with every extra and system tool.
 - Open-source project files: `SECURITY.md`, `CITATION.cff`, issue and pull request templates, Dependabot,
   `.editorconfig`, `.gitattributes`; CI checks formatting, builds and installs the wheel; a tag-triggered

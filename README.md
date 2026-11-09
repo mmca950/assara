@@ -270,19 +270,9 @@ session. Read [docs/legal.md](docs/legal.md).
 | [Claude Code](docs/claude-code.md) | skills, permissions, sub-agents, cost |
 | [Legal](docs/legal.md) | copyright, platform terms, no DRM circumvention |
 
-## Roadmap
-
-- [x] PDF, EPUB, audio and video, YouTube, Instagram, web pages
-- [x] Rebuild guard for cited units
-- [x] Docker image, CI on Python 3.10 to 3.13
-- [ ] Release on PyPI
-- [ ] Merge the two sets of subtitle helpers
-- [ ] Real-download tests for YouTube, Instagram and the web
-
-Ideas and bug reports are welcome in the [issues](https://github.com/mmca950/assara/issues).
-
 ## Contributing
 
+Ideas and bug reports are welcome in the [issues](https://github.com/mmca950/assara/issues).
 Contributions are welcome, to the code **and to the method**: a change to a skill or a template matters
 as much as a change to the code. Start with [CONTRIBUTING.md](CONTRIBUTING.md); please follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately: see [SECURITY.md](SECURITY.md).
