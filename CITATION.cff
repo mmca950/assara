@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: If you use Assara in your work, please cite it as below.
+title: Assara
+abstract: Turn books, courses, videos and web pages into short, citable notes and cross-source syntheses, with Claude Code as the distiller.
+type: software
+authors:
+  - alias: mmca950
+version: 0.1.0
+license: MIT
+repository-code: https://github.com/mmca950/assara

@@ -1,0 +1,37 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never attach copyrighted material (books, transcripts, units, notes of a protected source).
+        Reproduce with a public-domain text or a tiny generated file.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected, what you got (full error message).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Assara version
+      description: Output of `assara --version`.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, install method (pip, uv tool, Docker), extras installed.
+    validations:
+      required: true

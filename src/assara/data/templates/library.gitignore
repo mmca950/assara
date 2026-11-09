@@ -1,0 +1,20 @@
+# Assara library: what must never be versioned.
+#
+# Notes (layer 2) and syntheses (layer 3) may be versioned, in a PRIVATE repository only: they are your own
+# rewriting, but they derive from protected sources and quote their pages and figures. Originals, raw
+# extractions and units are the protected text itself: they stay out of any repository.
+
+sources/*/original/
+sources/*/raw/
+sources/*/units/
+inbox/
+.secrets/
+_to_delete/
+
+# Logs of long passes (transcription, link fetching) may contain excerpts.
+*.log
+
+# Tools
+.venv/
+__pycache__/
+.DS_Store

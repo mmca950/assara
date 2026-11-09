@@ -1,0 +1,5 @@
+# Example library. Unlike a real library, this one versions its original, raw text and units:
+# The Art of War (Lionel Giles translation, 1910) is in the public domain, distributed by Project Gutenberg.
+# In your own library, keep the default .gitignore written by `assara init`.
+.venv/
+__pycache__/

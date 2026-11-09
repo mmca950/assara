@@ -1,0 +1,23 @@
+name: Feature request
+description: A new source type, command, or change to the method (skills, templates).
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: The need
+      description: What you are trying to do and why the current commands or skills do not cover it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could work. For a change to a skill or template, say which guarantee it keeps or changes (citations, rebuild guard, flagged garbled text).
+  - type: checkboxes
+    id: legal
+    attributes:
+      label: Legal
+      options:
+        - label: This does not need DRM circumvention, a logged-in session, or scraping at scale (see docs/legal.md).
+          required: true

@@ -1,0 +1,28 @@
+# Assara library configuration.
+# Docs: https://github.com/mmca950/assara/blob/main/docs/configuration.md
+
+[library]
+# Folder names, relative to this file.
+sources = "sources"
+synthesis = "synthesis"
+# Copy originals into sources/<CODE>/original/ instead of linking to them.
+# Use true when originals live on a removable or network drive.
+copy_originals = true
+
+[units]
+# Target size of one unit of raw text (layer 1). One note is written per unit.
+min_words = 10000
+max_words = 17000
+
+[transcription]
+# faster-whisper model and device. Without an NVIDIA GPU, "small" on "cpu" runs at about 7 to 8 times
+# real time. With a GPU: model = "medium", device = "cuda".
+model = "small"
+device = "cpu"
+compute_type = "int8"
+# Language of the audio ("en", "fr", "ar"...). Empty = automatic detection.
+language = ""
+
+[links]
+# Subtitle languages to try first for YouTube, in order.
+subtitle_languages = ["en"]

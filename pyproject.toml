@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "assara"
+version = "0.1.0"
+description = "Turn books, courses, videos and web pages into short, citable notes and cross-source syntheses, with Claude Code as the distiller."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Mormind" }]
+keywords = ["knowledge-base", "notes", "pdf", "epub", "transcription", "whisper", "claude-code", "llm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Text Processing",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = ["tomli>=2.0; python_version < \"3.11\""]
+
+[project.optional-dependencies]
+pdf = ["pymupdf>=1.24"]
+epub = ["ebooklib>=0.18", "beautifulsoup4>=4.12"]
+audio = ["faster-whisper>=1.0", "av==17.1.0"]
+links = ["yt-dlp>=2024.1", "instaloader>=4.10", "requests>=2.31", "beautifulsoup4>=4.12"]
+all = ["assara[pdf,epub,audio,links]"]
+dev = ["pytest>=8", "ruff>=0.5", "requests>=2.31", "pymupdf>=1.24", "ebooklib>=0.18", "beautifulsoup4>=4.12"]
+
+[project.scripts]
+assara = "assara.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mmca950/assara"
+Documentation = "https://github.com/mmca950/assara/tree/main/docs"
+Repository = "https://github.com/mmca950/assara"
+Issues = "https://github.com/mmca950/assara/issues"
+Changelog = "https://github.com/mmca950/assara/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/assara"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/docs", "/README.md", "/LICENSE", "/CHANGELOG.md", "/CONTRIBUTING.md", "/CODE_OF_CONDUCT.md", "/SECURITY.md", "/CITATION.cff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
